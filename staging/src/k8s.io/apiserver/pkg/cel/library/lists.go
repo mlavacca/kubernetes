@@ -18,6 +18,7 @@ package library
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
@@ -87,6 +88,23 @@ import (
 //	['a', 'b', 'b', 'c'].lastIndexOf('b') // returns 2
 //	[1.0].indexOf(1.1) // returns -1
 //	[].indexOf('string') // returns -1
+//
+// sort
+//
+// Introduced in version: 2
+//
+// Sorts a list with comparable elements. If the element type is not comparable
+// or the element types are not the same, the function will produce an error.
+//
+//	<list(T)>.sort() -> <list(T)>
+//	T in {int, uint, double, bool, duration, timestamp, string, bytes}
+//
+// Examples:
+//
+//	[3, 2, 1].sort() // return [1, 2, 3]
+//	["b", "c", "a"].sort() // return ["a", "b", "c"]
+//	[1, "b"].sort() // error
+//	[[1, 2, 3]].sort() // error
 func Lists() cel.EnvOption {
 	return cel.Lib(listsLib)
 }
@@ -173,6 +191,28 @@ var listsLibraryDecls = map[string][]cel.FunctionOpt{
 		cel.MemberOverload("list_a_last_index_of_int", []*cel.Type{cel.ListType(paramA), paramA}, cel.IntType,
 			cel.BinaryBinding(lastIndexOf)),
 	},
+	"sort": append(
+		templatedOverloads(comparableTypes, func(name string, paramType *cel.Type) cel.FunctionOpt {
+			return cel.MemberOverload(fmt.Sprintf("list_%s_sort", name),
+				[]*cel.Type{paramType}, paramType)
+		}),
+		cel.SingletonUnaryBinding(
+			func(arg ref.Val) ref.Val {
+				list, ok := arg.(traits.Lister)
+				if !ok {
+					return types.MaybeNoSuchOverloadErr(arg)
+				}
+				sorted, err := sortList(list)
+				if err != nil {
+					return types.WrapErr(err)
+				}
+
+				return sorted
+			},
+			// List traits
+			traits.ListerType,
+		),
+	),
 }
 
 func (*lists) CompileOptions() []cel.EnvOption {
@@ -309,6 +349,50 @@ func lastIndexOf(list ref.Val, item ref.Val) ref.Val {
 		}
 	}
 	return types.Int(-1)
+}
+
+func sortList(list traits.Lister) (ref.Val, error) {
+	return sortListByAssociatedKeys(list, list)
+}
+
+func sortListByAssociatedKeys(list, keys traits.Lister) (ref.Val, error) {
+	listLength := list.Size().(types.Int)
+	keysLength := keys.Size().(types.Int)
+	if listLength != keysLength {
+		return nil, fmt.Errorf(
+			"@sortByAssociatedKeys() expected a list of the same size as the associated keys list, but got %d and %d elements respectively",
+			listLength,
+			keysLength,
+		)
+	}
+	if listLength == 0 {
+		return list, nil
+	}
+	elem := keys.Get(types.IntZero)
+	if _, ok := elem.(traits.Comparer); !ok {
+		return nil, fmt.Errorf("list elements must be comparable")
+	}
+
+	sortedIndices := make([]ref.Val, 0, listLength)
+	for i := types.IntZero; i < listLength; i++ {
+		if keys.Get(i).Type() != elem.Type() {
+			return nil, fmt.Errorf("list elements must have the same type")
+		}
+		sortedIndices = append(sortedIndices, i)
+	}
+
+	sort.Slice(sortedIndices, func(i, j int) bool {
+		iKey := keys.Get(sortedIndices[i])
+		jKey := keys.Get(sortedIndices[j])
+		return iKey.(traits.Comparer).Compare(jKey) == types.IntNegOne
+	})
+
+	sorted := make([]ref.Val, 0, listLength)
+
+	for _, sortedIdx := range sortedIndices {
+		sorted = append(sorted, list.Get(sortedIdx))
+	}
+	return types.DefaultTypeAdapter.NativeToValue(sorted), nil
 }
 
 // templatedOverloads returns overloads for each of the provided types. The template function is called with each type
