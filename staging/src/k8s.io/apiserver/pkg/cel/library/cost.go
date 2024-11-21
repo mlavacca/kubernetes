@@ -18,13 +18,14 @@ package library
 
 import (
 	"fmt"
+	"math"
+
 	"github.com/google/cel-go/checker"
 	"github.com/google/cel-go/common"
 	"github.com/google/cel-go/common/ast"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
-	"math"
 
 	"k8s.io/apiserver/pkg/cel"
 )
@@ -104,6 +105,12 @@ func (l *CostEstimator) CallCost(function, overloadId string, args []ref.Val, re
 		var cost uint64
 		if len(args) > 0 {
 			cost += traversalCost(args[0]) // these O(n) operations all cost roughly the cost of a single traversal
+		}
+		return &cost
+	case "sort":
+		var cost uint64
+		if len(args) > 0 {
+			cost = uint64(float64(traversalCost(args[0])) * math.Log(float64(traversalCost(args[0])))) // O(n log n) complexity
 		}
 		return &cost
 	case "url", "lowerAscii", "upperAscii", "substring", "trim", "jsonpatch.escapeKey":
