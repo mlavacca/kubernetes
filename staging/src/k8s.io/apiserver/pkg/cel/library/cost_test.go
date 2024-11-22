@@ -19,8 +19,9 @@ package library
 import (
 	"context"
 	"fmt"
-	"github.com/google/cel-go/common/types/ref"
 	"testing"
+
+	"github.com/google/cel-go/common/types/ref"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker"
@@ -118,6 +119,15 @@ func TestListsCost(t *testing.T) {
 				{
 					comparableLiteral:     timestampListLiteral,
 					expectedEstimatedCost: checker.CostEstimate{Min: 20, Max: 20}, expectedRuntimeCost: 20, // +5 for casts
+				},
+			},
+		},
+		{
+			opts: []string{".sort()"},
+			costs: []comparableCost{
+				{
+					comparableLiteral:     "[5, 1, 2, 3, 4]",
+					expectedEstimatedCost: checker.CostEstimate{Min: 20, Max: 20}, expectedRuntimeCost: 20, // figure it out
 				},
 			},
 		},
